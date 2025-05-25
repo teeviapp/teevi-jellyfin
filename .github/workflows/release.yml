@@ -13,9 +13,12 @@ jobs:
   build:
     name: Build and Create Release
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -29,17 +32,25 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Determine tag name
+        id: get_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            TAG_NAME=$(git describe --tags `git rev-list --tags --max-count=1`)
+          fi
+          echo "Using tag: $TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Check if release already exists
         id: check_release
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          echo "Checking release for tag: $tag"
-          response=$(gh release view "$tag" --json tagName --jq .tagName || true)
-          if [[ "$response" == "$tag" ]]; then
-            echo "Release already exists for tag $tag"
+          tag="${{ steps.get_tag.outputs.tag_name }}"
+          echo "Checking if release for tag '$tag' exists"
+          if gh release view "$tag" --json tagName --jq .tagName >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Release does not exist yet"
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
         env:
@@ -49,7 +60,8 @@ jobs:
         if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ steps.get_tag.outputs.tag_name }}
+          name: Release ${{ steps.get_tag.outputs.tag_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
