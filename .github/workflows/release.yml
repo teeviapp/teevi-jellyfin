@@ -5,6 +5,12 @@ on:
   push:
     tags:
       - "*"
+  workflow_run:
+    workflows: ["Create Version Tag"]
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: write
