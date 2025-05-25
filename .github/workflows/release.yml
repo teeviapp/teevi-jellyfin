@@ -5,6 +5,9 @@ on:
     tags:
       - "*" # Trigger on any tag
 
+permissions:
+  contents: write # Needed for creating releases and uploading assets
+
 jobs:
   build:
     name: Build and Create Release

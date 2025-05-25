@@ -5,7 +5,10 @@ on:
     branches:
       - main
     paths:
-      - "package.json" # Only trigger when package.json changes
+      - "package.json"
+
+permissions:
+  contents: write # Needed for pushing tags
 
 jobs:
   check-version:
@@ -14,7 +17,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Fetch all history to check if tag already exists
+          fetch-depth: 0
 
       - name: Get version from package.json
         id: package-version
@@ -38,7 +41,7 @@ jobs:
       - name: Create tag if version changed
         if: steps.check-tag.outputs.TAG_EXISTS == 'false'
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
           git tag ${{ steps.package-version.outputs.result }}
           git push origin ${{ steps.package-version.outputs.result }}
