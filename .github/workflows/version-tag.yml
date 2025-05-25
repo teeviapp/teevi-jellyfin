@@ -1,0 +1,44 @@
+name: Create Version Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "package.json" # Only trigger when package.json changes
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Fetch all history to check if tag already exists
+
+      - name: Get version from package.json
+        id: package-version
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            return packageJson.version;
+          result-encoding: string
+
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          if git rev-parse "${{ steps.package-version.outputs.result }}" >/dev/null 2>&1; then
+            echo "TAG_EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create tag if version changed
+        if: steps.check-tag.outputs.TAG_EXISTS == 'false'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag ${{ steps.package-version.outputs.result }}
+          git push origin ${{ steps.package-version.outputs.result }}
