@@ -12,11 +12,12 @@ import {
 import { makeImageURL } from "./api/images"
 import { findServer } from "./api/system"
 import { authenticateWithCredentials, JellyfinAuth } from "./api/users"
-import { fetchItem, fetchItems } from "./api/items"
+import { fetchItem, fetchItems, JellyfinItem } from "./api/items"
 import { fetchViews } from "./api/user-views"
 import { fetchTVShowSeasons, fetchTVShowEpisodes } from "./api/tv-shows"
 import { fetchMediaSource } from "./api/media-info"
 import { makeVideoUrl } from "./api/videos"
+import { fetchGenres } from "./api/genres"
 
 type Jellyfin = {
   server: URL
@@ -64,6 +65,26 @@ async function requireJellyfin(): Promise<Jellyfin> {
   localStorage.setItem("jellyfin.auth.response", JSON.stringify(auth))
 
   return { server: url, auth }
+}
+
+function mapJellyfinItemToTeeviShowEntry(
+  item: JellyfinItem,
+  server: URL
+): TeeviShowEntry {
+  return {
+    kind: item.Type === "Movie" ? "movie" : "series",
+    id: item.Id,
+    title: item.Name,
+    posterURL: item.ImageTags?.Primary
+      ? makeImageURL({
+          server: server,
+          itemId: item.Id,
+          imageId: item.ImageTags.Primary,
+          type: "Primary",
+          quality: "medium",
+        })
+      : undefined,
+  }
 }
 
 async function fetchShowsByQuery(query: string): Promise<TeeviShowEntry[]> {
@@ -197,6 +218,7 @@ async function fetchEpisodes(
 async function fetchFeedCollections(): Promise<TeeviFeedCollection[]> {
   const jellyfin = await requireJellyfin()
   const collections = await fetchViews(jellyfin.server, jellyfin.auth)
+  const genres = await fetchGenres(jellyfin.server, jellyfin.auth)
 
   let feedCollections: TeeviFeedCollection[] = []
 
@@ -204,23 +226,27 @@ async function fetchFeedCollections(): Promise<TeeviFeedCollection[]> {
     const items = await fetchItems(jellyfin.server, jellyfin.auth, {
       collectionId: collection.Id,
     })
-    const shows: TeeviShowEntry[] = items.map((item) => ({
-      kind: item.Type === "Movie" ? "movie" : "series",
-      id: item.Id,
-      title: item.Name,
-      posterURL: item.ImageTags?.Primary
-        ? makeImageURL({
-            server: jellyfin.server,
-            itemId: item.Id,
-            imageId: item.ImageTags.Primary,
-            type: "Primary",
-            quality: "medium",
-          })
-        : undefined,
-    }))
+    const shows: TeeviShowEntry[] = items.map((item) =>
+      mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
+    )
     feedCollections.push({
       id: collection.Id,
       name: collection.Name,
+      shows,
+    })
+  }
+
+  // Add genres as separate collections
+  for (const genre of genres) {
+    const items = await fetchItems(jellyfin.server, jellyfin.auth, {
+      genreId: genre.Id,
+    })
+    const shows: TeeviShowEntry[] = items.map((item) =>
+      mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
+    )
+    feedCollections.push({
+      id: `genre-${genre.Id}`,
+      name: genre.Name,
       shows,
     })
   }

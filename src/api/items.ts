@@ -22,7 +22,12 @@ export type JellyfinItem = {
 export async function fetchItems(
   server: URL,
   auth: JellyfinAuth,
-  filters: { collectionId?: string; searchTerm?: string; isFavorite?: boolean }
+  filters: {
+    collectionId?: string
+    searchTerm?: string
+    isFavorite?: boolean
+    genreId?: string
+  }
 ): Promise<JellyfinItem[]> {
   type CollectionResponseData = {
     Items: JellyfinItem[]
@@ -47,6 +52,9 @@ export async function fetchItems(
   }
   if (filters.collectionId) {
     endpoint.searchParams.append("ParentId", filters.collectionId)
+  }
+  if (filters.genreId) {
+    endpoint.searchParams.append("GenreIds", filters.genreId)
   }
 
   // endpoint.searchParams.append("Filters", "IsNotFolder")
