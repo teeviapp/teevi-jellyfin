@@ -1,6 +1,6 @@
 # Jellyfin Extension for Teevi
 
-![Jellyfin Logo](https://jellyfin.org/images/logo.svg)
+![Jellyfin Logo](public/icon.png)
 
 Enhance your media experience with this extension that seamlessly integrates the [Jellyfin](https://jellyfin.org) media server with the Teevi interface. Easily search, browse, and stream your favorite movies, TV shows, and more - all while maintaining full control of your media.
 
