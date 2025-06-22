@@ -76,6 +76,30 @@ export async function fetchItems(
   return data.Items.filter(({ Type }) => Type === "Movie" || Type === "Series")
 }
 
+export async function fetchSimilarItems(
+  server: URL,
+  auth: JellyfinAuth,
+  itemId: string
+): Promise<JellyfinItem[]> {
+  const endpoint = new URL(`Items/${itemId}/Similar`, server)
+  endpoint.searchParams.append("userId", auth.User.Id)
+  const response = await fetch(endpoint.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      ...makeAuthHeader(auth.AccessToken),
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch similar items: " + response.statusText)
+  }
+
+  const data: { Items: JellyfinItem[] } = await response.json()
+
+  return data.Items.filter(({ Type }) => Type === "Movie" || Type === "Series")
+}
+
 export async function fetchItem(
   server: URL,
   auth: JellyfinAuth,

@@ -12,7 +12,12 @@ import {
 
 import { findServer } from "./api/system"
 import { authenticateWithCredentials, JellyfinAuth } from "./api/users"
-import { fetchItem, fetchItems, JellyfinItem } from "./api/items"
+import {
+  fetchItem,
+  fetchItems,
+  fetchSimilarItems,
+  JellyfinItem,
+} from "./api/items"
 import { fetchViews } from "./api/user-views"
 import {
   fetchTVShowSeasons,
@@ -258,6 +263,20 @@ async function fetchShow(showId: string): Promise<TeeviShow> {
   // Add seasons if it's a TV show
   if (show.Type === "Series") {
     teeviShow.seasons = await fetchShowSeasons(jellyfin, show.Id)
+  }
+
+  try {
+    const similar = await fetchSimilarItems(
+      jellyfin.server,
+      jellyfin.auth,
+      show.Id
+    )
+    teeviShow.relatedShows = similar.map((item) =>
+      mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
+    )
+  } catch (error) {
+    console.error("Failed to fetch similar shows:", error)
+    teeviShow.relatedShows = []
   }
 
   return teeviShow
