@@ -9,37 +9,75 @@ import {
   TeeviVideoAsset,
   TeeviVideoExtension,
 } from "@teeviapp/core"
-import { makeImageURL } from "./api/images"
+
 import { findServer } from "./api/system"
 import { authenticateWithCredentials, JellyfinAuth } from "./api/users"
 import { fetchItem, fetchItems, JellyfinItem } from "./api/items"
 import { fetchViews } from "./api/user-views"
-import { fetchTVShowSeasons, fetchTVShowEpisodes } from "./api/tv-shows"
+import {
+  fetchTVShowSeasons,
+  fetchTVShowEpisodes,
+  JellyfinEpisode,
+} from "./api/tv-shows"
 import { fetchMediaSource } from "./api/media-info"
-import { makeVideoUrl } from "./api/videos"
 import { fetchGenres } from "./api/genres"
+import { ImageQuality, ImageType, makeImageURL } from "./api/images"
+import { makeVideoUrl } from "./api/videos"
 
-type Jellyfin = {
+// Types
+interface Jellyfin {
   server: URL
   auth: JellyfinAuth
 }
 
+interface JellyfinCredentials {
+  server: string
+  username: string
+  password: string
+}
+
+// Constants
+const STORAGE_KEYS = {
+  AUTH_INPUT: "jellyfin.auth.input",
+  AUTH_RESPONSE: "jellyfin.auth.response",
+  SERVER_ADDRESS: "jellyfin.auth.server.address",
+}
+
+// Authentication and session management
+
+/**
+ * Authenticates with Jellyfin server and returns server and auth information
+ * Caches credentials to avoid unnecessary re-authentication
+ */
 async function requireJellyfin(): Promise<Jellyfin> {
-  const input = {
-    server: Teevi.getInputValueById("server"),
-    username: Teevi.getInputValueById("username"),
+  const input: JellyfinCredentials = {
+    server: Teevi.getInputValueById("server") ?? "",
+    username: Teevi.getInputValueById("username") ?? "",
     password: Teevi.getInputValueById("password") ?? "",
   }
 
+  // Validate input
   if (!input.server || !input.username) {
-    throw new Error("Server and username are required")
+    throw new Error("Server and Username are required")
   }
 
-  const cachedInput = localStorage.getItem("jellyfin.auth.input")
-  const cachedAuth = localStorage.getItem("jellyfin.auth.response")
-  const cachedServerAddress = localStorage.getItem(
-    "jellyfin.auth.server.address"
-  )
+  // Try to use cached credentials
+  const cachedCredentials = tryGetCachedCredentials(input)
+  if (cachedCredentials) {
+    return cachedCredentials
+  }
+
+  // Authenticate with fresh credentials
+  return authenticateAndCacheCredentials(input)
+}
+
+/**
+ * Attempts to retrieve cached credentials if they match the input
+ */
+function tryGetCachedCredentials(input: JellyfinCredentials): Jellyfin | null {
+  const cachedInput = localStorage.getItem(STORAGE_KEYS.AUTH_INPUT)
+  const cachedAuth = localStorage.getItem(STORAGE_KEYS.AUTH_RESPONSE)
+  const cachedServerAddress = localStorage.getItem(STORAGE_KEYS.SERVER_ADDRESS)
 
   if (
     cachedInput &&
@@ -53,6 +91,15 @@ async function requireJellyfin(): Promise<Jellyfin> {
     }
   }
 
+  return null
+}
+
+/**
+ * Authenticates with Jellyfin server and caches the credentials
+ */
+async function authenticateAndCacheCredentials(
+  input: JellyfinCredentials
+): Promise<Jellyfin> {
   const server = await findServer(input.server)
   const url = new URL(server.address)
   const auth = await authenticateWithCredentials(url, {
@@ -60,12 +107,15 @@ async function requireJellyfin(): Promise<Jellyfin> {
     password: input.password,
   })
 
-  localStorage.setItem("jellyfin.auth.input", JSON.stringify(input))
-  localStorage.setItem("jellyfin.auth.server.address", server.address)
-  localStorage.setItem("jellyfin.auth.response", JSON.stringify(auth))
+  // Cache credentials
+  localStorage.setItem(STORAGE_KEYS.AUTH_INPUT, JSON.stringify(input))
+  localStorage.setItem(STORAGE_KEYS.SERVER_ADDRESS, server.address)
+  localStorage.setItem(STORAGE_KEYS.AUTH_RESPONSE, JSON.stringify(auth))
 
   return { server: url, auth }
 }
+
+// Mapping functions - Convert Jellyfin entities to Teevi entities
 
 function mapJellyfinItemToTeeviShowEntry(
   item: JellyfinItem,
@@ -75,16 +125,118 @@ function mapJellyfinItemToTeeviShowEntry(
     kind: item.Type === "Movie" ? "movie" : "series",
     id: item.Id,
     title: item.Name,
-    posterURL: item.ImageTags?.Primary
-      ? makeImageURL({
-          server: server,
-          itemId: item.Id,
-          imageId: item.ImageTags.Primary,
-          type: "Primary",
-          quality: "medium",
-        })
-      : undefined,
+    posterURL: getImageUrlIfAvailable({
+      imageTag: item.ImageTags?.Primary,
+      server: server,
+      itemId: item.Id,
+      type: "Primary",
+      quality: "medium",
+    }),
+    year: getYear(item),
   }
+}
+
+/**
+ * Maps a Jellyfin item to a full Teevi show
+ */
+function mapJellyfinItemToTeeviShow(
+  item: JellyfinItem,
+  server: URL
+): TeeviShow {
+  return {
+    kind: item.Type === "Movie" ? "movie" : "series",
+    id: item.Id,
+    title: item.Name,
+    overview: item.Overview ?? "",
+    releaseDate: getFormattedReleaseDate(item),
+    genres: item.Genres ?? [],
+    duration: calculateDuration(item.RunTimeTicks),
+    posterURL: getImageUrlIfAvailable({
+      imageTag: item.ImageTags?.Primary,
+      server: server,
+      itemId: item.Id,
+      type: "Primary",
+      quality: "high",
+    }),
+    backdropURL: getImageUrlIfAvailable({
+      imageTag: item.BackdropImageTags?.[0],
+      server: server,
+      itemId: item.Id,
+      type: "Backdrop",
+      quality: "high",
+    }),
+    logoURL: getImageUrlIfAvailable({
+      imageTag: item.ImageTags?.Logo,
+      server: server,
+      itemId: item.Id,
+      type: "Logo",
+      quality: "high",
+    }),
+    rating: item.CommunityRating,
+  }
+}
+
+/**
+ * Maps a Jellyfin episode to a Teevi episode
+ */
+function mapJellyfinEpisodeToTeeviEpisode(
+  episode: JellyfinEpisode,
+  server: URL
+): TeeviShowEpisode {
+  return {
+    id: episode.Id,
+    number: episode.IndexNumber,
+    title: episode.Name,
+    thumbnailURL: getImageUrlIfAvailable({
+      imageTag: episode.ImageTags?.Primary,
+      server: server,
+      itemId: episode.Id,
+      type: "Primary",
+      quality: "medium",
+    }),
+    overview: episode.Overview ?? "",
+    duration: calculateDuration(episode.RunTimeTicks),
+  }
+}
+
+// Helper functions
+
+function getYear(item: JellyfinItem): number | undefined {
+  if (item.PremiereDate) {
+    return new Date(item.PremiereDate).getFullYear()
+  }
+  return item.ProductionYear
+}
+
+function getFormattedReleaseDate(item: JellyfinItem): string {
+  if (item.PremiereDate) {
+    return new Date(item.PremiereDate).toISOString().split("T")[0]
+  }
+  return new Date().toISOString().split("T")[0]
+}
+
+function calculateDuration(runTimeTicks?: number): number {
+  if (!runTimeTicks) return 0
+  return Math.round(runTimeTicks / 10_000_000)
+}
+
+function getImageUrlIfAvailable(options: {
+  imageTag: string | undefined
+  server: URL
+  itemId: string
+  type: ImageType
+  quality: ImageQuality
+}): string | undefined {
+  const { imageTag, server, itemId, type, quality } = options
+  if (!imageTag) return undefined
+
+  return makeImageURL({
+    server,
+    itemId,
+    imageId: imageTag,
+    type: type,
+    quality: quality,
+  })
 }
 
 async function fetchShowsByQuery(query: string): Promise<TeeviShowEntry[]> {
@@ -93,86 +245,40 @@ async function fetchShowsByQuery(query: string): Promise<TeeviShowEntry[]> {
     searchTerm: query,
   })
 
-  return items.map((item) => ({
-    kind: item.Type === "Movie" ? "movie" : "series",
-    id: item.Id,
-    title: item.Name,
-    posterURL: item.ImageTags?.Primary
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: item.Id,
-          imageId: item.ImageTags.Primary,
-          type: "Primary",
-          quality: "medium",
-        })
-      : undefined,
-    year: item.PremiereDate
-      ? new Date(item.PremiereDate).getFullYear()
-      : item.ProductionYear,
-  }))
+  return items.map((item) =>
+    mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
+  )
 }
 
 async function fetchShow(showId: string): Promise<TeeviShow> {
   const jellyfin = await requireJellyfin()
   const show = await fetchItem(jellyfin.server, jellyfin.auth, showId)
+  const teeviShow = mapJellyfinItemToTeeviShow(show, jellyfin.server)
 
-  let seasons: TeeviShowSeason[] | undefined
+  // Add seasons if it's a TV show
   if (show.Type === "Series") {
-    const fetchedSeasons = await fetchTVShowSeasons(
-      jellyfin.server,
-      jellyfin.auth,
-      show.Id
-    )
-    seasons = fetchedSeasons
-      .filter((season) => season.IndexNumber !== undefined)
-      .map((season) => ({
-        name: season.Name,
-        number: season.IndexNumber!,
-      }))
+    teeviShow.seasons = await fetchShowSeasons(jellyfin, show.Id)
   }
 
-  return {
-    kind: show.Type === "Movie" ? "movie" : "series",
-    id: show.Id,
-    title: show.Name,
-    overview: show.Overview ?? "",
-    releaseDate: show.PremiereDate
-      ? new Date(show.PremiereDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0],
-    genres: show.Genres ?? [],
-    duration: show.RunTimeTicks
-      ? Math.round(show.RunTimeTicks / 10_000_000)
-      : 0,
-    posterURL: show.ImageTags?.Primary
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: show.Id,
-          imageId: show.ImageTags.Primary,
-          type: "Primary",
-          quality: "high",
-        })
-      : undefined,
-    backdropURL: show.BackdropImageTags?.[0]
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: show.Id,
-          imageId: show.BackdropImageTags[0],
-          type: "Backdrop",
-          quality: "high",
-        })
-      : undefined,
-    logoURL: show.ImageTags?.Logo
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: show.Id,
-          imageId: show.ImageTags.Logo,
-          type: "Logo",
-          quality: "high",
-        })
-      : undefined,
-    seasons: seasons,
-    rating: show.CommunityRating,
-  }
+  return teeviShow
+}
+
+async function fetchShowSeasons(
+  jellyfin: Jellyfin,
+  showId: string
+): Promise<TeeviShowSeason[] | undefined> {
+  const fetchedSeasons = await fetchTVShowSeasons(
+    jellyfin.server,
+    jellyfin.auth,
+    showId
+  )
+
+  return fetchedSeasons
+    .filter((season) => season.IndexNumber !== undefined)
+    .map((season) => ({
+      name: season.Name,
+      number: season.IndexNumber!,
+    }))
 }
 
 async function fetchEpisodes(
@@ -185,34 +291,22 @@ async function fetchEpisodes(
     jellyfin.auth,
     showId
   )
+
   const seasonId = seasons.find((s) => s.IndexNumber === season)?.Id
   if (!seasonId) {
     throw new Error(`Season ${season} not found`)
   }
+
   const episodes = await fetchTVShowEpisodes(
     jellyfin.server,
     jellyfin.auth,
     showId,
     seasonId
   )
-  return episodes.map((episode) => ({
-    id: episode.Id,
-    number: episode.IndexNumber,
-    title: episode.Name,
-    thumbnailURL: episode.ImageTags?.Primary
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: episode.Id,
-          imageId: episode.ImageTags.Primary,
-          type: "Primary",
-          quality: "medium",
-        })
-      : undefined,
-    overview: episode.Overview ?? "",
-    duration: episode.RunTimeTicks
-      ? Math.round(episode.RunTimeTicks / 10_000_000)
-      : 0,
-  }))
+
+  return episodes.map((episode) =>
+    mapJellyfinEpisodeToTeeviEpisode(episode, jellyfin.server)
+  )
 }
 
 async function fetchFeedCollections(): Promise<TeeviFeedCollection[]> {
@@ -222,21 +316,24 @@ async function fetchFeedCollections(): Promise<TeeviFeedCollection[]> {
 
   let feedCollections: TeeviFeedCollection[] = []
 
-  for (const collection of collections) {
-    const items = await fetchItems(jellyfin.server, jellyfin.auth, {
-      collectionId: collection.Id,
-    })
-    const shows: TeeviShowEntry[] = items.map((item) =>
-      mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
-    )
-    feedCollections.push({
-      id: collection.Id,
-      name: collection.Name,
-      shows,
-    })
+  // If no genres are available, use collections as the main feed
+  if (genres.length == 0) {
+    for (const collection of collections) {
+      const items = await fetchItems(jellyfin.server, jellyfin.auth, {
+        collectionId: collection.Id,
+      })
+      const shows: TeeviShowEntry[] = items.map((item) =>
+        mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
+      )
+      feedCollections.push({
+        id: collection.Id,
+        name: collection.Name,
+        shows,
+      })
+    }
   }
 
-  // Add genres as separate collections
+  // Add genres as collections
   for (const genre of genres) {
     const items = await fetchItems(jellyfin.server, jellyfin.auth, {
       genreId: genre.Id,
@@ -256,50 +353,15 @@ async function fetchFeedCollections(): Promise<TeeviFeedCollection[]> {
 
 async function fetchTrendingShows(): Promise<TeeviShow[]> {
   const jellyfin = await requireJellyfin()
-  const trendingItems = await fetchItems(jellyfin.server, jellyfin.auth, {
+  const favoriteItems = await fetchItems(jellyfin.server, jellyfin.auth, {
     isFavorite: true, // Assuming trending shows are marked as favorites
   })
 
-  return trendingItems.map((item) => ({
-    kind: item.Type === "Movie" ? "movie" : "series",
-    id: item.Id,
-    title: item.Name,
-    posterURL: item.ImageTags?.Primary
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: item.Id,
-          imageId: item.ImageTags.Primary,
-          type: "Primary",
-          quality: "high",
-        })
-      : undefined,
-    backdropURL: item.BackdropImageTags?.[0]
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: item.Id,
-          imageId: item.BackdropImageTags[0],
-          type: "Backdrop",
-          quality: "high",
-        })
-      : undefined,
-    logoURL: item.ImageTags?.Logo
-      ? makeImageURL({
-          server: jellyfin.server,
-          itemId: item.Id,
-          imageId: item.ImageTags.Logo,
-          type: "Logo",
-          quality: "high",
-        })
-      : undefined,
-    overview: item.Taglines?.[0] ?? item.Overview ?? "",
-    releaseDate: item.PremiereDate
-      ? new Date(item.PremiereDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0],
-    genres: item.Genres ?? [],
-    duration: item.RunTimeTicks
-      ? Math.round(item.RunTimeTicks / 10_000_000)
-      : 0,
-  }))
+  return favoriteItems.map((item) => {
+    let show = mapJellyfinItemToTeeviShow(item, jellyfin.server)
+    show.overview = item.Taglines?.[0] ?? show.overview
+    return show
+  })
 }
 
 async function fetchVideoAssets(mediaId: string): Promise<TeeviVideoAsset[]> {
