@@ -1,6 +1,8 @@
 # Jellyfin Extension for Teevi
 
-![Jellyfin Logo](public/icon.png)
+<div>
+  <img src="public/icon.png" alt="Jellyfin Logo" style="max-width: 88pt; display: inline-block; border-radius: 4px;">
+</div>
 
 Enhance your media experience with this extension that seamlessly integrates the [Jellyfin](https://jellyfin.org) media server with the Teevi interface. Easily search, browse, and stream your favorite movies, TV shows, and more - all while maintaining full control of your media.
 
