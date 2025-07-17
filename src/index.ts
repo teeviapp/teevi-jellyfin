@@ -335,21 +335,19 @@ async function fetchFeedCollections(): Promise<TeeviFeedCollection[]> {
 
   let feedCollections: TeeviFeedCollection[] = []
 
-  // If no genres are available, use collections as the main feed
-  if (genres.length == 0) {
-    for (const collection of collections) {
-      const items = await fetchItems(jellyfin.server, jellyfin.auth, {
-        collectionId: collection.Id,
-      })
-      const shows: TeeviShowEntry[] = items.map((item) =>
-        mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
-      )
-      feedCollections.push({
-        id: collection.Id,
-        name: collection.Name,
-        shows,
-      })
-    }
+  for (const collection of collections) {
+    const items = await fetchItems(jellyfin.server, jellyfin.auth, {
+      collectionId: collection.Id,
+    })
+    const shows: TeeviShowEntry[] = items.map((item) =>
+      mapJellyfinItemToTeeviShowEntry(item, jellyfin.server)
+    )
+    feedCollections.push({
+      id: collection.Id,
+      name: collection.Name,
+      shows,
+      category: collection.CollectionType === "tvshows" ? "series" : "movies",
+    })
   }
 
   // Add genres as collections
