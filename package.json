@@ -1,6 +1,6 @@
 {
   "name": "teevi.jellyfin",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "A volunteer-built media solution that puts you in control of your media. Your media, your server, your way",
   "main": "index.ts",
   "type": "module",
