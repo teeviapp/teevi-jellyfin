@@ -14,16 +14,19 @@ export function makeImageURL(request: {
 
   switch (quality) {
     case "low":
-      endpoint.searchParams.append("maxWidth", "180")
+      endpoint.searchParams.append("maxWidth", "200")
       endpoint.searchParams.append("quality", "70")
       break
     case "medium":
-      endpoint.searchParams.append("maxWidth", "400")
-      endpoint.searchParams.append("quality", "85")
+      endpoint.searchParams.append("maxWidth", "500")
+      endpoint.searchParams.append("quality", "80")
       break
     case "high":
-      endpoint.searchParams.append("maxWidth", "800")
+      endpoint.searchParams.append("maxWidth", "1000")
       endpoint.searchParams.append("quality", "90")
+      break
+    case "original":
+      // No resizing or quality modifications for original images.
       break
   }
 

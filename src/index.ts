@@ -135,7 +135,7 @@ function mapJellyfinItemToTeeviShowEntry(
       server: server,
       itemId: item.Id,
       type: "Primary",
-      quality: "medium",
+      quality: "low",
     }),
     year: getYear(item),
   }
@@ -197,7 +197,7 @@ function mapJellyfinEpisodeToTeeviEpisode(
       server: server,
       itemId: episode.Id,
       type: "Primary",
-      quality: "medium",
+      quality: "low",
     }),
     overview: episode.Overview ?? "",
     duration: calculateDuration(episode.RunTimeTicks),
