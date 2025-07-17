@@ -1,0 +1,122 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "package.json"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (leave empty to use package.json version)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Get version from package.json
+        id: package-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Package.json version: $VERSION"
+
+      - name: Determine release version
+        id: release-version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "Using manually specified version: $VERSION"
+          else
+            VERSION="${{ steps.package-version.outputs.version }}"
+            echo "Using package.json version: $VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag $VERSION already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag $VERSION does not exist"
+          fi
+
+      - name: Check if release exists
+        id: check-release
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $VERSION already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $VERSION does not exist"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.check-release.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Build project
+        if: steps.check-release.outputs.exists == 'false'
+        run: npm run build
+
+      - name: Create tag
+        if: steps.check-tag.outputs.exists == 'false' && steps.check-release.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+
+      - name: Create Release
+        if: steps.check-release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release-version.outputs.version }}
+          name: Release ${{ steps.release-version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release created
+        if: steps.check-release.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          echo "✅ Release $VERSION created successfully!"
+          echo "🚀 Check it out at: https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+
+      - name: Release already exists
+        if: steps.check-release.outputs.exists == 'true'
+        run: |
+          VERSION="${{ steps.release-version.outputs.version }}"
+          echo "ℹ️ Release $VERSION already exists. Skipping creation."
