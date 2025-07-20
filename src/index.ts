@@ -24,10 +24,9 @@ import {
   fetchTVShowEpisodes,
   JellyfinEpisode,
 } from "./api/tv-shows"
-import { fetchMediaSource } from "./api/media-info"
 import { fetchGenres } from "./api/genres"
 import { ImageQuality, ImageType, makeImageURL } from "./api/images"
-import { makeVideoUrl } from "./api/videos"
+import { fetchVideoSource } from "./api/media-info"
 
 // Types
 interface Jellyfin {
@@ -80,6 +79,10 @@ async function requireJellyfin(): Promise<Jellyfin> {
  * Attempts to retrieve cached credentials if they match the input
  */
 function tryGetCachedCredentials(input: JellyfinCredentials): Jellyfin | null {
+  if (typeof localStorage === "undefined") {
+    return null
+  }
+
   const cachedInput = localStorage.getItem(STORAGE_KEYS.AUTH_INPUT)
   const cachedAuth = localStorage.getItem(STORAGE_KEYS.AUTH_RESPONSE)
   const cachedServerAddress = localStorage.getItem(STORAGE_KEYS.SERVER_ADDRESS)
@@ -105,6 +108,7 @@ function tryGetCachedCredentials(input: JellyfinCredentials): Jellyfin | null {
 async function authenticateAndCacheCredentials(
   input: JellyfinCredentials
 ): Promise<Jellyfin> {
+  console.log("Authenticating with Jellyfin server...", input)
   const server = await findServer(input.server)
   const url = new URL(server.address)
   const auth = await authenticateWithCredentials(url, {
@@ -113,9 +117,11 @@ async function authenticateAndCacheCredentials(
   })
 
   // Cache credentials
-  localStorage.setItem(STORAGE_KEYS.AUTH_INPUT, JSON.stringify(input))
-  localStorage.setItem(STORAGE_KEYS.SERVER_ADDRESS, server.address)
-  localStorage.setItem(STORAGE_KEYS.AUTH_RESPONSE, JSON.stringify(auth))
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(STORAGE_KEYS.AUTH_INPUT, JSON.stringify(input))
+    localStorage.setItem(STORAGE_KEYS.SERVER_ADDRESS, server.address)
+    localStorage.setItem(STORAGE_KEYS.AUTH_RESPONSE, JSON.stringify(auth))
+  }
 
   return { server: url, auth }
 }
@@ -383,13 +389,8 @@ async function fetchTrendingShows(): Promise<TeeviShow[]> {
 
 async function fetchVideoAssets(mediaId: string): Promise<TeeviVideoAsset[]> {
   const jellyfin = await requireJellyfin()
-  const media = await fetchMediaSource(jellyfin.server, jellyfin.auth, mediaId)
-
   const asset: TeeviVideoAsset = {
-    url: makeVideoUrl(jellyfin.server, media.Id, {
-      supportsDirectStream: media.SupportsDirectStream,
-      container: media.Container,
-    }),
+    url: await fetchVideoSource(jellyfin.server, jellyfin.auth, mediaId),
   }
 
   return [asset]
