@@ -1,5 +1,7 @@
+// Jellyfin default ports
 const JF_HTTP_PORT = 8096
 const JF_HTTPS_PORT = 8920
+// Standard HTTP/HTTPS ports
 const DEFAULT_HTTP_PORT = 80
 const DEFAULT_HTTPS_PORT = 443
 
@@ -20,14 +22,23 @@ export type JellyfinServer = {
 }
 
 export async function findServer(input: string): Promise<JellyfinServer> {
+  // Generate possible server URL candidates from user input
   const candidates = findServerCandidates(input)
   if (candidates.length === 0) {
-    throw new Error("No server candidates found")
+    throw new Error(
+      `No valid server candidates found for input: "${input}". Please verify the URL format.`
+    )
   }
+
+  // Try to connect to each candidate and get server info
   const info = await fetchPublicSystemInfo(candidates)
   if (!info) {
-    throw new Error("No server found")
+    throw new Error(
+      `No server found for input "${input}". Please verify the URL format and try again.`
+    )
   }
+
+  // Ensure the server address ends with a slash
   const normalizedAddress = info.LocalAddress.endsWith("/")
     ? info.LocalAddress
     : info.LocalAddress + "/"
@@ -40,29 +51,37 @@ export async function findServer(input: string): Promise<JellyfinServer> {
 async function fetchPublicSystemInfo(
   servers: string[]
 ): Promise<PublicSystemInfo | undefined> {
+  // Try each server candidate until one responds successfully
   for (const server of servers) {
     try {
-      const response = await fetch(`${server}/System/Info/Public`)
+      const endpoint = new URL("System/Info/Public", server)
+
+      const response = await fetch(endpoint.toString())
       if (response.ok) {
         const info: PublicSystemInfo = await response.json()
         return info
       }
-    } catch (error) {}
+    } catch (error) {
+      // Silently continue to next candidate if this one fails
+    }
   }
 }
 
 function findServerCandidates(input: string): string[] {
-  const url = new URL(normalizeUrl(input))
+  const url = new URL(normalizeUrlForJellyfin(input))
 
+  // If protocol and port are already specified, use as-is
   if (url.protocol && url.port) {
     return [url.toString()]
   }
 
   const candidates: ServerCandidate[] = []
 
+  // Add standard HTTP/HTTPS port candidates
   candidates.push(createServerCandidate(url, "http:", DEFAULT_HTTP_PORT))
   candidates.push(createServerCandidate(url, "https:", DEFAULT_HTTPS_PORT))
 
+  // Add Jellyfin-specific port candidates based on protocol
   if (url.protocol === "http:") {
     candidates.push(createServerCandidate(url, "http:", JF_HTTP_PORT))
   } else if (url.protocol === "https:") {
@@ -70,7 +89,7 @@ function findServerCandidates(input: string): string[] {
     candidates.push(createServerCandidate(url, "https:", JF_HTTPS_PORT))
   }
 
-  // Sort candidates by score
+  // Sort candidates by score (best first) and return URLs
   return candidates
     .sort((a, b) => a.score - b.score)
     .map((c) => c.url.toString())
@@ -91,13 +110,14 @@ function createServerCandidate(
     }
   }
 
-  // Clone the URL and enforce the protocol and default port if not set
+  // Clone the URL and set the specified protocol and port
   const candidate = new URL(url.toString())
   candidate.protocol = protocol
   if (!candidate.port) {
     candidate.port = String(defaultPort)
   }
 
+  // Calculate priority score (lower is better)
   // Prefer secure connections
   let score = protocol === "https:" ? 5 : -5
 
@@ -106,26 +126,26 @@ function createServerCandidate(
     candidate.port === "" ||
     candidate.port === getDefaultPort(protocol).toString()
   ) {
-    score += 3
+    score += 3 // Standard ports get bonus
   } else if (url.port === JF_HTTP_PORT.toString()) {
-    score += 2 // Using the Jellyfin http port is common
+    score += 2 // Jellyfin HTTP port is common
   } else if (url.port === JF_HTTPS_PORT.toString()) {
-    score -= 1 // Using the Jellyfin https port is not common
+    score -= 1 // Jellyfin HTTPS port is less common
   }
 
   return { url: candidate, score }
 }
 
-function normalizeUrl(urlString: string): string {
-  // Rimuove eventuali spazi bianchi iniziali/finali
+function normalizeUrlForJellyfin(urlString: string): string {
+  // Remove leading/trailing whitespace
   urlString = urlString.trim()
 
-  // Verifica e blocca protocolli non supportati
+  // Block unsupported protocols for security
   if (/^(data:|view-source:)/i.test(urlString)) {
     throw new Error("Unsupported URL protocol")
   }
 
-  // Se manca il protocollo o l'URL inizia con "//", aggiunge "http://"
+  // Add http:// protocol if missing or if URL starts with "//"
   if (!/^(https?:)?\/\//i.test(urlString)) {
     urlString = "http://" + urlString
   } else if (/^\/\//.test(urlString)) {
@@ -139,25 +159,21 @@ function normalizeUrl(urlString: string): string {
     throw new Error("Invalid URL")
   }
 
-  // Rimuove hash e query params per normalizzare l'URL
-  //urlObject.hash = ""
-  //urlObject.search = ""
-
-  // Normalizza il pathname: rimuove slash duplicati, decodifica i componenti URI e rimuove lo slash finale (eccetto quando è l'unico carattere)
+  // Normalize pathname: remove duplicate slashes and decode URI components
   if (urlObject.pathname) {
     const simplifiedPath = decodeURI(urlObject.pathname.replace(/\/{2,}/g, "/"))
-    urlObject.pathname =
-      simplifiedPath !== "/"
-        ? simplifiedPath.replace(/\/$/, "")
-        : simplifiedPath
+    // Ensure pathname always ends with a slash
+    urlObject.pathname = simplifiedPath.endsWith("/")
+      ? simplifiedPath
+      : simplifiedPath + "/"
   }
 
-  // Rimuove un eventuale punto finale nel nome host
+  // Remove trailing dot from hostname if present
   if (urlObject.hostname) {
     urlObject.hostname = urlObject.hostname.replace(/\.$/, "")
   }
 
-  // Assicura che protocollo e hostname siano in minuscolo
+  // Ensure protocol and hostname are lowercase
   urlObject.protocol = urlObject.protocol.toLowerCase()
   urlObject.hostname = urlObject.hostname.toLowerCase()
 
