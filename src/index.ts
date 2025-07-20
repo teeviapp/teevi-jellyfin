@@ -108,7 +108,11 @@ function tryGetCachedCredentials(input: JellyfinCredentials): Jellyfin | null {
 async function authenticateAndCacheCredentials(
   input: JellyfinCredentials
 ): Promise<Jellyfin> {
-  console.log("Authenticating with Jellyfin server...", input)
+  console.debug("Starting authentication with Jellyfin server", {
+    server: input.server,
+    username: input.username,
+  })
+
   const server = await findServer(input.server)
   const url = new URL(server.address)
   const auth = await authenticateWithCredentials(url, {

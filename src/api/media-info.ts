@@ -48,6 +48,9 @@ async function fetchMediaSource(
       UserId: auth.User.Id,
       AlwaysBurnInSubtitleWhenTranscoding: false,
       DeviceProfile: AppleVideoDeviceProfile,
+      EnableDirectPlay: true,
+      EnableDirectStream: true,
+      EnableTranscoding: true,
     }),
   })
 
@@ -56,6 +59,8 @@ async function fetchMediaSource(
   }
 
   const data: PlaybackInfoResponseData = await response.json()
+  console.debug("Playback info response:", data)
+
   if (!data.MediaSources || data.MediaSources.length === 0) {
     throw new Error("No media sources found")
   }
@@ -154,6 +159,7 @@ const AppleVideoDeviceProfile = {
       MaxAudioChannels: "8",
       MinSegments: "2",
       BreakOnNonKeyFrames: true,
+      EnableSubtitlesInManifest: true,
     },
   ],
   SubtitleProfiles: [
@@ -164,5 +170,6 @@ const AppleVideoDeviceProfile = {
     { Format: "pgssub", Method: "Encode" },
     { Format: "xsub", Method: "Encode" },
     { Format: "vtt", Method: "Hls" },
+    { Format: "subrip", Method: "External" },
   ],
 }
