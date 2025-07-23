@@ -155,11 +155,8 @@ const AppleVideoDeviceProfile = {
       AudioCodec: "aac,ac3,eac3,flac,alac",
       VideoCodec: "h264,mpeg4,hevc",
       Context: "Streaming",
-      Protocol: "hls",
+      Protocol: "http",
       MaxAudioChannels: "8",
-      MinSegments: "2",
-      BreakOnNonKeyFrames: true,
-      EnableSubtitlesInManifest: true,
     },
   ],
   SubtitleProfiles: [
