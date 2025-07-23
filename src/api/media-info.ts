@@ -152,11 +152,14 @@ const AppleVideoDeviceProfile = {
     {
       Container: "mp4",
       Type: "Video",
-      AudioCodec: "aac,ac3,eac3,flac,alac",
-      VideoCodec: "h264,mpeg4,hevc",
+      AudioCodec: "aac,ac3,alac,eac3,flac",
+      VideoCodec: "hevc,h264,mpeg4",
       Context: "Streaming",
-      Protocol: "http",
+      Protocol: "hls",
       MaxAudioChannels: "8",
+      MinSegments: "2",
+      BreakOnNonKeyFrames: true,
+      EnableSubtitlesInManifest: true,
     },
   ],
   SubtitleProfiles: [
@@ -167,6 +170,5 @@ const AppleVideoDeviceProfile = {
     { Format: "pgssub", Method: "Encode" },
     { Format: "xsub", Method: "Encode" },
     { Format: "vtt", Method: "Hls" },
-    { Format: "subrip", Method: "External" },
   ],
 }
